@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>全球矢量面迷雾效果 · 主题色半透明云雾</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --panel-bg: #16213e;
+            --text: #e0e0e0;
+            --accent: #4cc9f0;
+            --border: #2a3a5c;
+            --slider-track: #2a3a5c;
+            --shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            --font: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        }
+
+        * { margin:0; padding:0; box-sizing:border-box; }
+
+        body {
+            background: var(--bg);
+            font-family: var(--font);
+            overflow: hidden;
+            height: 100vh; width: 100vw;
+            display: flex;
+            user-select: none;
+            -webkit-user-select: none;
+            color: var(--text);
+        }
+
+        #map-container { flex:1; position:relative; min-width:0; }
+        #map {
+            width:100%; height:100%;
+            background: #000;
+            cursor: grab;
+        }
+        #map:active { cursor: grabbing; }
+
+        .render-badge {
+            position:absolute; top:16px; left:16px;
+            background: rgba(22,33,62,0.9);
+            border:1px solid var(--border);
+            border-radius:8px; padding:8px 14px;
+            font-size:12px; font-weight:600;
+            color: var(--accent);
+            pointer-events: none; z-index:10;
+            backdrop-filter: blur(8px);
+            display: flex; align-items:center; gap:8px;
+        }
+        .render-badge .dot {
+            width:8px; height:8px; border-radius:50%;
+            background: #00ff88;
+            animation: pulse-dot 2s infinite;
+            box-shadow: 0 0 8px #00ff88;
+        }
+        @keyframes pulse-dot {
+            0%,100% { box-shadow:0 0 4px #00ff88; }
+            50% { box-shadow:0 0 16px #00ff88,0 0 24px #00ff8866; }
+        }
+
+        .legend-overlay {
+            position:absolute; bottom:24px; left:16px;
+            display:flex; flex-wrap:wrap; gap:6px;
+            z-index:10; pointer-events:none;
+        }
+        .legend-item {
+            background:rgba(22,33,62,0.85);
+            border:1px solid var(--border);
+            border-radius:20px; padding:5px 12px;
+            font-size:11px; font-weight:500;
+            display:flex; align-items:center; gap:6px;
+            backdrop-filter:blur(6px);
+        }
+        .legend-dot {
+            width:10px; height:10px; border-radius:50%;
+            flex-shrink:0;
+            box-shadow:0 0 6px currentColor;
+        }
+
+        #config-panel {
+            width:380px; min-width:380px;
+            background:var(--panel-bg);
+            border-left:1px solid var(--border);
+            display:flex; flex-direction:column;
+            z-index:20; box-shadow:var(--shadow);
+            overflow-y:auto; overflow-x:hidden;
+            scrollbar-width: thin;
+            scrollbar-color:#2a3a5c transparent;
+        }
+        #config-panel::-webkit-scrollbar { width:6px; }
+        #config-panel::-webkit-scrollbar-track { background:transparent; }
+        #config-panel::-webkit-scrollbar-thumb { background:#2a3a5c; border-radius:3px; }
+
+        .panel-header {
+            padding:20px 24px 12px; border-bottom:1px solid var(--border);
+            position:sticky; top:0; background:var(--panel-bg); z-index:5;
+        }
+        .panel-header h2 { font-size:18px; font-weight:700; color:#fff; margin-bottom:4px; }
+        .panel-header .subtitle { font-size:11px; color:#8899bb; }
+
+        .panel-section {
+            padding:16px 24px;
+            border-bottom:1px solid rgba(42,58,92,0.5);
+        }
+        .panel-section:last-child { border-bottom:none; }
+        .section-title {
+            font-size:13px; font-weight:700; letter-spacing:0.6px;
+            text-transform:uppercase; color:#8899bb;
+            margin-bottom:12px; display:flex; align-items:center; gap:8px;
+        }
+        .section-title::before {
+            content:''; width:3px; height:14px;
+            background:var(--accent); border-radius:2px;
+        }
+
+        .slider-group { margin-bottom:14px; }
+        .slider-label {
+            display:flex; justify-content:space-between;
+            font-size:12px; margin-bottom:6px;
+        }
+        .slider-label span:first-child { color:#c0c8d8; font-weight:500; }
+        .slider-label .val { color:var(--accent); font-weight:700; min-width:36px; text-align:right; }
+
+        input[type="range"] {
+            -webkit-appearance:none; width:100%; height:6px;
+            border-radius:3px; background:var(--slider-track);
+            outline:none; cursor:pointer;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance:none; width:22px; height:22px;
+            border-radius:50%; background:#fff;
+            border:2px solid var(--accent);
+            box-shadow:0 2px 8px rgba(0,0,0,0.3);
+            transition: transform 0.15s;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover { transform:scale(1.15); }
+
+        .color-row {
+            display:flex; align-items:center; gap:10px;
+            padding:8px 10px; border-radius:8px;
+            margin-bottom:4px; transition: background 0.2s;
+        }
+        .color-row:hover { background:rgba(255,255,255,0.03); }
+        .color-row .region-index {
+            width:22px; height:22px; border-radius:50%;
+            font-size:11px; font-weight:700; display:flex;
+            align-items:center; justify-content:center; flex-shrink:0;
+            color:#fff;
+        }
+        .color-row .region-name { flex:1; font-size:12px; font-weight:500; color:#c0c8d8; }
+        .color-row input[type="color"] {
+            -webkit-appearance:none; width:32px; height:32px;
+            border-radius:50%; border:2px solid var(--border);
+            cursor:pointer; padding:0; background:transparent;
+            flex-shrink:0;
+        }
+        .color-row input[type="color"]::-webkit-color-swatch-wrapper { padding:0; }
+        .color-row input[type="color"]::-webkit-color-swatch { border-radius:50%; border:none; }
+        .color-row .mini-slider { width:60px; flex-shrink:0; }
+        .color-row .mini-slider input[type="range"] { height:3px; }
+        .color-row .mini-slider input[type="range"]::-webkit-slider-thumb { width:16px; height:16px; }
+
+        .btn-reset, .btn-apply {
+            display:inline-flex; align-items:center; gap:6px;
+            padding:8px 16px; border-radius:20px;
+            font-size:12px; cursor:pointer; letter-spacing:0.4px;
+            font-weight:500; transition: all 0.2s; font-family:var(--font);
+        }
+        .btn-reset {
+            border:1px solid var(--border); background:transparent;
+            color:#c0c8d8;
+        }
+        .btn-reset:hover { background:rgba(255,255,255,0.06); border-color:#fff; color:#fff; }
+        .btn-apply {
+            border:none; background:var(--accent); color:#000; font-weight:700;
+        }
+        .btn-apply:hover { background:#fff; box-shadow:0 4px 16px rgba(76,201,240,0.4); }
+        .btn-row { display:flex; gap:10px; flex-wrap:wrap; margin-top:4px; }
+
+        @media (max-width: 768px) {
+            body { flex-direction:column; }
+            #config-panel { width:100%; min-width:100%; max-height:45vh; border-left:none; border-top:1px solid var(--border); }
+            #map-container { flex:1; min-height:55vh; }
+        }
+    </style>
+</head>
+<body>
+    <div id="map-container">
+        <div id="map"></div>
+        <div class="render-badge"><span class="dot"></span><span>半透明云雾渲染中</span></div>
+        <div class="legend-overlay" id="legend"></div>
+    </div>
+
+    <div id="config-panel">
+        <div class="panel-header">
+            <h2>🌫️ 迷雾效果配置</h2>
+            <p class="subtitle">主题色 × 半透明云雾 · 世界坐标锚定</p>
+        </div>
+        <div class="panel-section">
+            <div class="section-title">全局迷雾参数</div>
+            <div class="slider-group">
+                <div class="slider-label"><span>迷雾密度</span><span class="val" id="val-density">0.55</span></div>
+                <input type="range" id="slider-density" min="0" max="1" step="0.01" value="0.55">
+            </div>
+            <div class="slider-group">
+                <div class="slider-label"><span>迷雾强度</span><span class="val" id="val-opacity">0.70</span></div>
+                <input type="range" id="slider-opacity" min="0" max="1" step="0.01" value="0.70">
+            </div>
+            <div class="slider-group">
+                <div class="slider-label"><span>噪声层次</span><span class="val" id="val-layers">3</span></div>
+                <input type="range" id="slider-layers" min="1" max="6" step="1" value="3">
+            </div>
+            <div class="slider-group">
+                <div class="slider-label"><span>噪声频率</span><span class="val" id="val-frequency">1.00</span></div>
+                <input type="range" id="slider-frequency" min="0.3" max="3" step="0.05" value="1">
+            </div>
+            <div class="slider-group">
+                <div class="slider-label"><span>扰动幅度</span><span class="val" id="val-turbulence">0.40</span></div>
+                <input type="range" id="slider-turbulence" min="0" max="1" step="0.01" value="0.40">
+            </div>
+            <div class="btn-row" style="margin-top:8px;">
+                <button class="btn-reset" id="btn-reset-global">↺ 重置全局</button>
+                <button class="btn-apply" id="btn-randomize">🎲 随机迷雾</button>
+            </div>
+        </div>
+        <div class="panel-section">
+            <div class="section-title">区域主题色</div>
+            <div id="region-colors-container"></div>
+            <div class="btn-row" style="margin-top:10px;">
+                <button class="btn-reset" id="btn-reset-colors">↺ 重置配色</button>
+                <button class="btn-apply" id="btn-rainbow">🌈 彩虹配色</button>
+            </div>
+        </div>
+        <div class="panel-section" style="background:rgba(0,0,0,0.15);">
+            <div style="font-size:11px;color:#8899bb;line-height:1.6;">
+                <strong style="color:#fff;">🔒 纹理锚定：</strong>迷雾纹理基于世界坐标采样，缩放/平移时纹理与矢量面相对位置<strong style="color:#00ff88;">零偏移</strong>。
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/ol@10.4.0/dist/ol.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.4.0/ol.css">
+
+    <script>
+        (function() {
+            const REGION_COUNT = 7;
+            const TEXTURE_SIZE = 512; // 纹理尺寸，平衡性能与质量
+
+            // 区域配置
+            const defaultRegionConfigs = [
+                { name: '太平洋',   color: '#1a6b8a', lonRange: [-180, -128.57] },
+                { name: '美洲西',   color: '#c75b39', lonRange: [-128.57, -77.14] },
+                { name: '美洲东',   color: '#2d8c5e', lonRange: [-77.14, -25.71] },
+                { name: '欧非',     color: '#7b5ea7', lonRange: [-25.71, 25.71] },
+                { name: '中亚',     color: '#c7852f', lonRange: [25.71, 77.14] },
+                { name: '东亚',     color: '#b8445a', lonRange: [77.14, 128.57] },
+                { name: '太平洋西', color: '#3a7ca5', lonRange: [128.57, 180] },
+            ];
+
+            let regionConfigs = JSON.parse(JSON.stringify(defaultRegionConfigs));
+            let globalParams = {
+                density: 0.55,
+                opacity: 0.70,
+                layers: 3,
+                frequency: 1.0,
+                turbulence: 0.40,
+            };
+
+            let map = null;
+            // 7个独立的WebGL矢量图层
+            let webglLayers = [];
+            // 每个区域引用的迷雾纹理（全局共用同一张）
+            let regionTextures = [];
+            let globalTextureCanvas = null;
+
+            let anchorRef = { center: null, zoom: null, resolution: null };
+            let rebuildDebounce = null;
+
+            function hexToRgb01(hexColor) {
+                const hex = (hexColor || '#000000').replace('#', '');
+                const safe = hex.length === 6 ? hex : '000000';
+                return [
+                    parseInt(safe.substring(0, 2), 16) / 255,
+                    parseInt(safe.substring(2, 4), 16) / 255,
+                    parseInt(safe.substring(4, 6), 16) / 255,
+                ];
+            }
+
+            // ---------- 基于 1.js shader 思路生成云雾纹理 ----------
+            function generateRegionTexture(hexColor, opacity, seed) {
+                const size = TEXTURE_SIZE;
+                const glCanvas = document.createElement('canvas');
+                glCanvas.width = size;
+                glCanvas.height = size;
+                const outCanvas = document.createElement('canvas');
+                outCanvas.width = size;
+                outCanvas.height = size;
+
+                const gl = glCanvas.getContext('webgl', { preserveDrawingBuffer: true });
+                if (!gl) return createFallbackTexture(hexColor, seed, size, size, opacity);
+
+                const vsSource = `
+                    attribute vec2 a_position;
+                    varying vec2 v_uv;
+                    void main() {
+                        v_uv = (a_position + 1.0) * 0.5;
+                        gl_Position = vec4(a_position, 0.0, 1.0);
+                    }
+                `;
+
+                const fsSource = `
+                    precision mediump float;
+                    varying vec2 v_uv;
+                    uniform vec3 u_themeColor;
+                    uniform float u_seed;
+                    uniform float u_density;
+                    uniform float u_opacity;
+                    uniform float u_frequency;
+                    uniform float u_turbulence;
+                    uniform float u_layers;
+
+                    float random(vec2 st) {
+                        return fract(sin(dot(st, vec2(12.9898, 78.233))) * 43758.5453123);
+                    }
+                    float noise(vec2 st) {
+                        vec2 i = floor(st);
+                        vec2 f = fract(st);
+                        float a = random(i);
+                        float b = random(i + vec2(1.0, 0.0));
+                        float c = random(i + vec2(0.0, 1.0));
+                        float d = random(i + vec2(1.0, 1.0));
+                        vec2 u = f * f * (3.0 - 2.0 * f);
+                        return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+                    }
+                    float fbm(vec2 st, float octaves) {
+                        float v = 0.0;
+                        float a = 0.5;
+                        float f = 1.0;
+                        for (int i = 0; i < 7; i++) {
+                            if (float(i) >= octaves) break;
+                            v += a * noise(st * f);
+                            f *= 2.0;
+                            a *= 0.55;
+                        }
+                        return v;
+                    }
+                    void main() {
+                        vec2 st = v_uv * max(0.35, u_frequency) * 2.2;
+                        vec2 warp = vec2(
+                            fbm(st * 1.8 + vec2(u_seed * 0.013, u_seed * 0.021), 4.0 + u_layers * 0.35),
+                            fbm(st * 1.9 + vec2(5.2 + u_seed * 0.017, 1.3 + u_seed * 0.011), 4.0 + u_layers * 0.35)
+                        );
+                        float cloud = fbm(st * 1.6 + warp * (1.1 + u_turbulence * 0.9), 4.0 + u_layers);
+                        float detail = fbm(st * 5.4 + warp * 0.8 + vec2(2.3, 9.1), 3.0 + u_layers * 0.8);
+                        float micro = fbm(st * 10.0 + warp * 0.45 + vec2(12.1, 5.9), 2.0 + u_layers * 0.5);
+                        float holes = fbm(st * 4.8 + vec2(19.7 + u_seed * 0.011, 7.3 + u_seed * 0.013), 3.6);
+
+                        vec3 fogBase = mix(vec3(1.0), u_themeColor, 0.16);
+                        float shade = 0.95 + detail * 0.12 + micro * 0.07;
+                        vec3 color = fogBase * shade;
+
+                        float body = smoothstep(0.26, 0.92, cloud);
+                        float edgeSoft = smoothstep(0.12, 0.72, cloud);
+                        float holeMask = smoothstep(0.82, 0.98, holes) * smoothstep(0.34, 0.85, cloud);
+                        float alpha = body * (0.78 + edgeSoft * 0.22) * max(0.0, 1.0 - holeMask * 0.58);
+                        alpha *= (0.24 + u_density * 0.76) * (0.30 + u_opacity * 0.70);
+
+                        gl_FragColor = vec4(clamp(color, 0.0, 1.0), clamp(alpha, 0.0, 1.0));
+                    }
+                `;
+
+                function compile(type, source) {
+                    const shader = gl.createShader(type);
+                    gl.shaderSource(shader, source);
+                    gl.compileShader(shader);
+                    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                        gl.deleteShader(shader);
+                        return null;
+                    }
+                    return shader;
+                }
+
+                const vs = compile(gl.VERTEX_SHADER, vsSource);
+                const fs = compile(gl.FRAGMENT_SHADER, fsSource);
+                if (!vs || !fs) return createFallbackTexture(hexColor, seed, size, size, opacity);
+
+                const program = gl.createProgram();
+                gl.attachShader(program, vs);
+                gl.attachShader(program, fs);
+                gl.linkProgram(program);
+                if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                    return createFallbackTexture(hexColor, seed, size, size, opacity);
+                }
+
+                gl.useProgram(program);
+                const quad = new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]);
+                const buffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+                gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
+                const aPosition = gl.getAttribLocation(program, 'a_position');
+                gl.enableVertexAttribArray(aPosition);
+                gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
+
+                const [r, g, b] = hexToRgb01(hexColor);
+                gl.uniform3f(gl.getUniformLocation(program, 'u_themeColor'), r, g, b);
+                gl.uniform1f(gl.getUniformLocation(program, 'u_seed'), seed);
+                gl.uniform1f(gl.getUniformLocation(program, 'u_density'), globalParams.density);
+                gl.uniform1f(gl.getUniformLocation(program, 'u_opacity'), opacity);
+                gl.uniform1f(gl.getUniformLocation(program, 'u_frequency'), globalParams.frequency);
+                gl.uniform1f(gl.getUniformLocation(program, 'u_turbulence'), globalParams.turbulence);
+                gl.uniform1f(gl.getUniformLocation(program, 'u_layers'), globalParams.layers);
+                gl.viewport(0, 0, size, size);
+                gl.clearColor(0, 0, 0, 0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+                const outCtx = outCanvas.getContext('2d');
+                if (outCtx) outCtx.drawImage(glCanvas, 0, 0, size, size);
+
+                if (buffer) gl.deleteBuffer(buffer);
+                if (program) gl.deleteProgram(program);
+                if (vs) gl.deleteShader(vs);
+                if (fs) gl.deleteShader(fs);
+                const loseExt = gl.getExtension('WEBGL_lose_context');
+                if (loseExt) loseExt.loseContext();
+
+                return outCtx ? outCanvas : createFallbackTexture(hexColor, seed, size, size, opacity);
+            }
+
+            function regenerateAllTextures() {
+                // 全局始终一张纹理：所有区域共享同一张云雾贴图
+                globalTextureCanvas = generateRegionTexture('#c9d3df', globalParams.opacity, 91.73);
+                regionTextures = regionConfigs.map(() => globalTextureCanvas);
+            }
+
+            function seededRandom(seed) {
+                const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453123;
+                return x - Math.floor(x);
+            }
+
+            function createFallbackTexture(themeColor, seed, width, height, opacity) {
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return canvas;
+                ctx.clearRect(0, 0, width, height);
+                const tint = 0.16;
+                const [r, g, b] = hexToRgb01(themeColor).map(v => Math.round(v * 255));
+                const fogR = Math.round(255 * (1 - tint) + r * tint);
+                const fogG = Math.round(255 * (1 - tint) + g * tint);
+                const fogB = Math.round(255 * (1 - tint) + b * tint);
+                for (let i = 0; i < 260; i++) {
+                    const x = seededRandom(seed + i * 3.1) * width;
+                    const y = seededRandom(seed + i * 7.7) * height;
+                    const rr = 18 + seededRandom(seed + i * 11.3) * 140;
+                    const gRadial = ctx.createRadialGradient(x, y, 0, x, y, rr);
+                    gRadial.addColorStop(0, `rgba(${fogR},${fogG},${fogB},${0.08 * opacity})`);
+                    gRadial.addColorStop(1, 'rgba(255,255,255,0)');
+                    ctx.fillStyle = gRadial;
+                    ctx.beginPath();
+                    ctx.arc(x, y, rr, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                return canvas;
+            }
+
+            // ---------- 矢量面（EPSG:4326 → EPSG:3857） ----------
+            function createRegionPolygon(lonRange) {
+                const latMin = -85, latMax = 85;
+                const [lonMin, lonMax] = lonRange;
+                const coords = [[
+                    [lonMin, latMin], [lonMax, latMin],
+                    [lonMax, latMax], [lonMin, latMax],
+                    [lonMin, latMin]
+                ]];
+                const polygon = new ol.geom.Polygon(coords);
+                polygon.transform('EPSG:4326', 'EPSG:3857');
+                return polygon;
+            }
+
+            // ---------- 创建单个 WebGL 矢量图层（官方 pattern 变量方案） ----------
+            function createSingleWebGLLayer(index, config, textureCanvas) {
+                const polygon = createRegionPolygon(config.lonRange);
+                const baseFeature = new ol.Feature({
+                    geometry: polygon,
+                    regionIndex: index,
+                });
+                const source = new ol.source.Vector({ features: [baseFeature], wrapX: false });
+                const textureSrc = (textureCanvas && typeof textureCanvas.toDataURL === 'function')
+                    ? textureCanvas.toDataURL('image/png')
+                    : '';
+                const style = {
+                    variables: {
+                        patternOffsetX: 0,
+                        patternOffsetY: 0,
+                        patternSizeX: TEXTURE_SIZE,
+                        patternSizeY: TEXTURE_SIZE,
+                    },
+                    'fill-pattern-src': textureSrc,
+                    'fill-pattern-offset': ['array', ['var', 'patternOffsetX'], ['var', 'patternOffsetY']],
+                    'fill-pattern-size': ['array', ['var', 'patternSizeX'], ['var', 'patternSizeY']],
+                    'fill-pattern-repeat': 'no-repeat',
+                    'fill-color': 'rgba(255,255,255,0.03)',
+                    'stroke-color': 'rgba(255,255,255,0.05)',
+                    'stroke-width': 0.6,
+                };
+                return new ol.layer.WebGLVector({
+                    source: source,
+                    style: style,
+                    variables: {
+                        patternOffsetX: 0,
+                        patternOffsetY: 0,
+                        patternSizeX: TEXTURE_SIZE,
+                        patternSizeY: TEXTURE_SIZE,
+                    },
+                    updateWhileAnimating: true,
+                    updateWhileInteracting: true,
+                });
+            }
+
+            // ---------- 重建所有图层 ----------
+            function rebuildAllLayers() {
+                if (!map) return;
+
+                // 移除旧图层
+                webglLayers.forEach(layer => {
+                    map.removeLayer(layer);
+                    layer.dispose();
+                });
+                webglLayers = [];
+
+                // 重新生成纹理
+                regenerateAllTextures();
+
+                // 重置锚定参考点
+                const view = map.getView();
+                anchorRef.center = view.getCenter().slice();
+                anchorRef.zoom = view.getZoom();
+                anchorRef.resolution = view.getResolution();
+
+                // 创建新图层
+                webglLayers = regionConfigs.map((config, idx) =>
+                    createSingleWebGLLayer(idx, config, regionTextures[idx])
+                );
+
+                // 添加到地图
+                const layersCollection = map.getLayers();
+                webglLayers.forEach(layer => layersCollection.push(layer));
+
+                // 更新样式变量
+                updateAllStyleVariables();
+            }
+
+            // ---------- 更新所有图层的世界坐标偏移与缩放 ----------
+            function updateAllStyleVariables() {
+                if (!map || webglLayers.length === 0) return;
+                const view = map.getView();
+                const center = view.getCenter();
+                const resolution = view.getResolution();
+                const mapSize = map.getSize();
+                if (!center || !resolution || !mapSize) return;
+
+                const worldHalf = 20037508.342789244;
+                const worldMinX = -worldHalf;
+                const worldMaxY = worldHalf;
+                const worldWidth = worldHalf * 2;
+                const worldHeight = worldHalf * 2;
+
+                // 全局单纹理覆盖整张世界地图（不平铺）
+                const patternSizeX = worldWidth / resolution;
+                const patternSizeY = worldHeight / resolution;
+                const patternOffsetX = (center[0] - worldMinX) / resolution - mapSize[0] / 2;
+                const patternOffsetY = (worldMaxY - center[1]) / resolution - mapSize[1] / 2;
+
+                webglLayers.forEach(layer => {
+                    if (typeof layer.updateStyleVariables !== 'function') return;
+                    try {
+                        layer.updateStyleVariables({
+                            patternOffsetX,
+                            patternOffsetY,
+                            patternSizeX,
+                            patternSizeY,
+                        });
+                    } catch (e) {}
+                });
+            }
+
+            // ---------- UI辅助 ----------
+            function updateLegend() {
+                const el = document.getElementById('legend');
+                if (!el) return;
+                el.innerHTML = regionConfigs.map(c => `
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background:${c.color};color:${c.color};"></span>
+                        ${c.name}
+                    </div>`).join('');
+            }
+
+            function updateRegionColorUI() {
+                const container = document.getElementById('region-colors-container');
+                if (!container) return;
+                container.innerHTML = regionConfigs.map((c, i) => `
+                    <div class="color-row" data-index="${i}">
+                        <span class="region-index" style="background:${c.color};">${i+1}</span>
+                        <span class="region-name">${c.name}</span>
+                        <input type="color" class="region-color-picker" data-index="${i}" value="${c.color}">
+                    </div>`).join('');
+
+                container.querySelectorAll('.region-color-picker').forEach(picker => {
+                    picker.addEventListener('input', (e) => {
+                        const idx = parseInt(e.target.dataset.index);
+                        regionConfigs[idx].color = e.target.value;
+                        const dot = e.target.closest('.color-row').querySelector('.region-index');
+                        if (dot) dot.style.background = e.target.value;
+                        updateLegend();
+                        scheduleRebuild();
+                    });
+                });
+            }
+
+            function scheduleRebuild() {
+                if (rebuildDebounce) clearTimeout(rebuildDebounce);
+                rebuildDebounce = setTimeout(() => {
+                    rebuildAllLayers();
+                    updateLegend();
+                }, 300);
+            }
+
+            function scheduleTextureOnlyRebuild() {
+                // 纹理参数变化，直接重建
+                scheduleRebuild();
+            }
+
+            // ---------- 地图初始化 ----------
+            function initMap() {
+                const hasWebGL = (() => {
+                    try {
+                        const c = document.createElement('canvas');
+                        return !!(c.getContext('webgl') || c.getContext('webgl2'));
+                    } catch (e) { return false; }
+                })();
+                if (!hasWebGL) {
+                    document.getElementById('map').innerHTML = '<div style="color:#ff6b6b;text-align:center;padding:40px;">⚠️ 浏览器不支持WebGL</div>';
+                    return;
+                }
+                regenerateAllTextures();
+
+                const initialView = new ol.View({
+                    center: ol.proj.fromLonLat([15, 10]),
+                    zoom: 2.5,
+                    minZoom: 1,
+                    maxZoom: 8,
+                });
+
+                const controlsFactory = ol?.control?.defaults;
+                const mapOptions = {
+                    target: 'map',
+                    layers: [],
+                    view: initialView,
+                };
+                if (typeof controlsFactory === 'function') {
+                    mapOptions.controls = controlsFactory({ attributionOptions: { collapsed: true } });
+                }
+
+                map = new ol.Map(mapOptions);
+
+                anchorRef.center = initialView.getCenter().slice();
+                anchorRef.zoom = initialView.getZoom();
+                anchorRef.resolution = initialView.getResolution();
+
+                rebuildAllLayers();
+
+                map.on('moveend', updateAllStyleVariables);
+                const view = map.getView();
+                view.on('change:center', updateAllStyleVariables);
+                view.on('change:resolution', updateAllStyleVariables);
+
+                updateLegend();
+                updateRegionColorUI();
+                console.log('✅ 半透明云雾地图已启动，7个主题色区域叠加动态迷雾纹理');
+            }
+
+            // ---------- 事件绑定 ----------
+            function bindEvents() {
+                const density = document.getElementById('slider-density');
+                const valDensity = document.getElementById('val-density');
+                density.addEventListener('input', () => {
+                    globalParams.density = +density.value;
+                    valDensity.textContent = globalParams.density.toFixed(2);
+                    scheduleTextureOnlyRebuild();
+                });
+
+                const opacity = document.getElementById('slider-opacity');
+                const valOpacity = document.getElementById('val-opacity');
+                opacity.addEventListener('input', () => {
+                    globalParams.opacity = +opacity.value;
+                    valOpacity.textContent = globalParams.opacity.toFixed(2);
+                    scheduleTextureOnlyRebuild();
+                });
+
+                const layers = document.getElementById('slider-layers');
+                const valLayers = document.getElementById('val-layers');
+                layers.addEventListener('input', () => {
+                    globalParams.layers = parseInt(layers.value);
+                    valLayers.textContent = globalParams.layers;
+                    scheduleTextureOnlyRebuild();
+                });
+
+                const freq = document.getElementById('slider-frequency');
+                const valFreq = document.getElementById('val-frequency');
+                freq.addEventListener('input', () => {
+                    globalParams.frequency = +freq.value;
+                    valFreq.textContent = globalParams.frequency.toFixed(2);
+                    scheduleTextureOnlyRebuild();
+                });
+
+                const turb = document.getElementById('slider-turbulence');
+                const valTurb = document.getElementById('val-turbulence');
+                turb.addEventListener('input', () => {
+                    globalParams.turbulence = +turb.value;
+                    valTurb.textContent = globalParams.turbulence.toFixed(2);
+                    scheduleTextureOnlyRebuild();
+                });
+
+                document.getElementById('btn-reset-global').onclick = () => {
+                    globalParams = { density: 0.55, opacity: 0.70, layers: 3, frequency: 1.0, turbulence: 0.40 };
+                    density.value = 0.55; valDensity.textContent = '0.55';
+                    opacity.value = 0.70; valOpacity.textContent = '0.70';
+                    layers.value = 3; valLayers.textContent = '3';
+                    freq.value = 1; valFreq.textContent = '1.00';
+                    turb.value = 0.40; valTurb.textContent = '0.40';
+                    scheduleTextureOnlyRebuild();
+                };
+
+                document.getElementById('btn-randomize').onclick = () => {
+                    globalParams.density = Math.round((0.2 + Math.random()*0.7)*100)/100;
+                    globalParams.opacity = Math.round((0.3 + Math.random()*0.6)*100)/100;
+                    globalParams.layers = Math.floor(1 + Math.random()*6);
+                    globalParams.frequency = Math.round((0.4 + Math.random()*2.5)*100)/100;
+                    globalParams.turbulence = Math.round(Math.random()*100)/100;
+                    density.value = globalParams.density; valDensity.textContent = globalParams.density.toFixed(2);
+                    opacity.value = globalParams.opacity; valOpacity.textContent = globalParams.opacity.toFixed(2);
+                    layers.value = globalParams.layers; valLayers.textContent = globalParams.layers;
+                    freq.value = globalParams.frequency; valFreq.textContent = globalParams.frequency.toFixed(2);
+                    turb.value = globalParams.turbulence; valTurb.textContent = globalParams.turbulence.toFixed(2);
+                    scheduleTextureOnlyRebuild();
+                };
+
+                document.getElementById('btn-reset-colors').onclick = () => {
+                    regionConfigs = JSON.parse(JSON.stringify(defaultRegionConfigs));
+                    updateRegionColorUI();
+                    updateLegend();
+                    scheduleRebuild();
+                };
+
+                document.getElementById('btn-rainbow').onclick = () => {
+                    const colors = ['#e6194b','#ff6b35','#ffd166','#06d6a0','#118ab2','#073b4c','#9b5de5'];
+                    regionConfigs.forEach((c,i) => { c.color = colors[i%7]; });
+                    updateRegionColorUI();
+                    updateLegend();
+                    scheduleRebuild();
+                };
+            }
+
+            function bootstrap() {
+                bindEvents();
+                updateRegionColorUI();
+                updateLegend();
+                initMap();
+                window.__mistDebug = {
+                    getMap: () => map,
+                    forceRebuild: rebuildAllLayers,
+                };
+            }
+
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootstrap);
+            else bootstrap();
+        })();
+    </script>
+</body>
+</html>
